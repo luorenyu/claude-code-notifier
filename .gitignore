@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# Backups
+*.bak
+*.old
+
+# Logs
+*.log
+
+# Temp
+tmp/
+temp/
