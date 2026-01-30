@@ -12,17 +12,161 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}=== Claude Code Notifier 卸载脚本 ===${NC}"
+printf "${BLUE}=== Claude Code Notifier 卸载脚本 ===${NC}\n"
 
-# 1. 移除 settings.json 中的配置
-SETTINGS_FILE="$HOME/.claude/settings.json"
-SCRIPT_PATH="$HOME/.claude/scripts/notify.sh"
+# 检测已安装的平台
+CLAUDE_INSTALLED=false
+CODEX_INSTALLED=false
 
-if [ -f "$SETTINGS_FILE" ]; then
-    echo -e "${BLUE}正在从 ~/.claude/settings.json 中移除 hooks 配置...${NC}"
+if [ -f "$HOME/.claude/scripts/notify.sh" ]; then
+    CLAUDE_INSTALLED=true
+fi
 
-    # 使用 Python 安全地修改 JSON
-    python3 -c "
+# 检查 .codex 目录 (新版)
+if [ -d "$HOME/.codex/scripts" ]; then
+    CODEX_INSTALLED=true
+fi
+
+# 检查旧版 Codex 安装 (作为兼容性检测)
+if [ -f "$HOME/.claude/scripts/codex-notify" ]; then
+    CODEX_LEGACY=true
+else
+    CODEX_LEGACY=false
+fi
+
+if [[ "$CLAUDE_INSTALLED" == "false" ]] && [[ "$CODEX_INSTALLED" == "false" ]] && [[ "$CODEX_LEGACY" == "false" ]]; then
+    printf "${YELLOW}未检测到已安装的通知系统。${NC}\n"
+    exit 0
+fi
+
+# 交互式菜单函数
+function show_uninstall_menu() {
+    local prompt="$1"
+    shift
+    local options=("$@")
+    local cur=0
+    local count=${#options[@]}
+    local selected=()
+
+    # 初始化选项 (默认全部选中，方便一键卸载)
+    for ((i=0; i<count; i++)); do
+        selected[i]="true"
+    done
+
+    # Print prompt and instructions
+    printf "%b\n" "$prompt"
+    printf "${YELLOW}操作说明: [↑/↓]移动光标  [空格]选中/取消  [回车]确认${NC}\n"
+
+    # Hide cursor
+    tput civis
+
+    while true; do
+        # Render menu
+        for ((i=0; i<count; i++)); do
+            local mark=" "
+            if [[ -n "${selected[i]}" ]]; then
+                mark="${RED}x${NC}" # 卸载用红色 x 表示
+            fi
+
+            if [ $i -eq $cur ]; then
+                printf " ${BLUE}>${NC} [%b] %s\n" "$mark" "${options[i]}"
+            else
+                printf "   [%b] %s\n" "$mark" "${options[i]}"
+            fi
+        done
+
+        # Handle Input
+        IFS= read -rsn1 key 2>/dev/null
+        if [[ "$key" == $'\x1b' ]]; then
+            read -rsn2 key 2>/dev/null
+            if [[ "$key" == "[A" ]]; then # Up
+                ((cur--))
+                if [ $cur -lt 0 ]; then cur=$((count-1)); fi
+            elif [[ "$key" == "[B" ]]; then # Down
+                ((cur++))
+                if [ $cur -ge $count ]; then cur=0; fi
+            fi
+        elif [[ "$key" == " " ]]; then # Space
+            if [[ -n "${selected[cur]}" ]]; then
+                selected[cur]=""
+            else
+                selected[cur]="true"
+            fi
+        elif [[ "$key" == "" ]]; then # Enter
+            break
+        fi
+
+        # Move cursor back up to redraw
+        printf "\033[${count}A"
+    done
+
+    # Restore cursor
+    tput cnorm
+
+    # Set global variables
+    UNINSTALL_CLAUDE=false
+    UNINSTALL_CODEX=false
+
+    # 映射选项回变量
+    local idx=0
+    if [[ "$CLAUDE_INSTALLED" == "true" ]]; then
+        if [[ -n "${selected[$idx]}" ]]; then UNINSTALL_CLAUDE=true; fi
+        ((idx++))
+    fi
+
+    if [[ "$CODEX_INSTALLED" == "true" || "$CODEX_LEGACY" == "true" ]]; then
+        if [[ -n "${selected[$idx]}" ]]; then UNINSTALL_CODEX=true; fi
+        ((idx++))
+    fi
+}
+
+# 构建动态菜单列表
+OPTIONS_LIST=()
+[[ "$CLAUDE_INSTALLED" == "true" ]] && OPTIONS_LIST+=("Claude Code (位于 ~/.claude)")
+[[ "$CODEX_INSTALLED" == "true" ]] && OPTIONS_LIST+=("OpenAI Codex (位于 ~/.codex)")
+[[ "$CODEX_LEGACY" == "true" ]] && OPTIONS_LIST+=("OpenAI Codex (旧版, 位于 ~/.claude)")
+
+if [ ${#OPTIONS_LIST[@]} -eq 0 ]; then
+    echo "没有发现可卸载的组件。"
+    exit 0
+fi
+
+show_uninstall_menu "请选择要卸载的组件:" "${OPTIONS_LIST[@]}"
+
+if [[ "$UNINSTALL_CLAUDE" == "false" && "$UNINSTALL_CODEX" == "false" ]]; then
+    echo "取消卸载。"
+    exit 0
+fi
+
+echo ""
+printf "准备卸载: \n"
+if [[ "$UNINSTALL_CLAUDE" == "true" ]]; then printf "  ${RED}x Claude Code${NC}\n"; fi
+if [[ "$UNINSTALL_CODEX" == "true" ]]; then printf "  ${RED}x OpenAI Codex${NC}\n"; fi
+echo ""
+
+read -p "确认执行卸载? [y/N] " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "操作已取消。"
+    exit 0
+fi
+
+# ========================================
+# Claude Code 卸载
+# ========================================
+
+if [[ "$UNINSTALL_CLAUDE" == "true" ]]; then
+    printf "${BLUE}正在卸载 Claude Code 通知功能...${NC}\n"
+
+    # 1. 移除 settings.json 中的配置
+    SETTINGS_FILE="$HOME/.claude/settings.json"
+    SCRIPT_PATH="$HOME/.claude/scripts/notify.sh"
+
+    if [ -f "$SETTINGS_FILE" ]; then
+        printf "${BLUE}正在从 ~/.claude/settings.json 中移除 hooks 配置...${NC}\n"
+
+        # 使用 Python 安全地修改 JSON
+        python3 -c "
 import json
 import os
 import sys
@@ -82,9 +226,6 @@ if 'commands' in data:
         del data['commands']['notifier']
         print('  - 移除 /notifier 命令')
         modified = True
-        # 如果 commands 为空，可以选择删除 (可选)
-        if not data['commands']:
-            del data['commands']
 
 if modified:
     with open(settings_path, 'w') as f:
@@ -93,53 +234,101 @@ if modified:
 else:
     print('未找到相关配置，无需移除。')
 "
-else
-    echo -e "${YELLOW}未找到配置文件: $SETTINGS_FILE${NC}"
-fi
-
-# 2. 删除文件
-INSTALL_DIR="$HOME/.claude/scripts"
-ASSETS_DIR="$HOME/.claude/assets"
-CONFIG_FILE="$HOME/.claude/notifier.conf"
-
-echo -e "${BLUE}正在删除安装文件...${NC}"
-
-if [ -f "$INSTALL_DIR/notify.sh" ]; then
-    rm "$INSTALL_DIR/notify.sh"
-    echo -e "${GREEN}✓ 已删除脚本: $INSTALL_DIR/notify.sh${NC}"
-fi
-
-if [ -f "$INSTALL_DIR/toggle.sh" ]; then
-    rm "$INSTALL_DIR/toggle.sh"
-    echo -e "${GREEN}✓ 已删除脚本: $INSTALL_DIR/toggle.sh${NC}"
-fi
-
-if [ -f "$CONFIG_FILE" ]; then
-    read -p "是否删除配置文件 ($CONFIG_FILE)? [y/N] " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        rm "$CONFIG_FILE"
-        echo -e "${GREEN}✓ 已删除配置文件${NC}"
     else
-        echo -e "已保留配置文件。"
+        printf "${YELLOW}未找到配置文件: $SETTINGS_FILE${NC}\n"
     fi
-fi
 
-if [ -f "$ASSETS_DIR/logo.png" ]; then
-    read -p "是否删除图标资源 ($ASSETS_DIR/logo.png)? [y/N] " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    # 2. 删除文件
+    INSTALL_DIR="$HOME/.claude/scripts"
+    ASSETS_DIR="$HOME/.claude/assets"
+    COMMANDS_DIR="$HOME/.claude/commands"
+    CONFIG_FILE="$HOME/.claude/notifier.conf"
+
+    printf "${BLUE}正在删除安装文件...${NC}\n"
+
+    if [ -f "$INSTALL_DIR/notify.sh" ]; then
+        rm "$INSTALL_DIR/notify.sh"
+        printf "${GREEN}✓ 已删除脚本: $INSTALL_DIR/notify.sh${NC}\n"
+    fi
+
+    if [ -f "$INSTALL_DIR/toggle.sh" ]; then
+        rm "$INSTALL_DIR/toggle.sh"
+        printf "${GREEN}✓ 已删除脚本: $INSTALL_DIR/toggle.sh${NC}\n"
+    fi
+
+    if [ -f "$COMMANDS_DIR/notifier.md" ]; then
+        rm "$COMMANDS_DIR/notifier.md"
+        printf "${GREEN}✓ 已删除命令: $COMMANDS_DIR/notifier.md${NC}\n"
+    fi
+
+    if [ -f "$CONFIG_FILE" ]; then
+        rm "$CONFIG_FILE"
+        printf "${GREEN}✓ 已删除配置文件${NC}\n"
+    fi
+
+    if [ -f "$ASSETS_DIR/logo.png" ]; then
         rm "$ASSETS_DIR/logo.png"
-        echo -e "${GREEN}✓ 已删除图标资源${NC}"
-
+        printf "${GREEN}✓ 已删除图标资源${NC}\n"
         # 尝试删除空目录
         rmdir "$ASSETS_DIR" 2>/dev/null || true
-    else
-        echo -e "已保留图标资源。"
     fi
+
+    # 尝试删除脚本目录（如果为空）
+    rmdir "$INSTALL_DIR" 2>/dev/null || true
+
+    printf "${GREEN}✓ Claude Code 卸载完成${NC}\n"
 fi
 
-# 尝试删除脚本目录（如果为空）
-rmdir "$INSTALL_DIR" 2>/dev/null || true
+# ========================================
+# Codex 卸载
+# ========================================
 
-echo -e "${BLUE}=== 卸载完成 ===${NC}"
+if [[ "$UNINSTALL_CODEX" == "true" ]]; then
+    printf "${BLUE}正在卸载 Codex 通知功能...${NC}\n"
+
+    # 1. 移除 Alias
+    SHELL_CONFIGS=("$HOME/.zshrc" "$HOME/.bashrc")
+    for RC_FILE in "${SHELL_CONFIGS[@]}"; do
+        if [ -f "$RC_FILE" ]; then
+            if grep -q "alias codex=" "$RC_FILE"; then
+                printf "${BLUE}正在从 $RC_FILE 中移除 alias...${NC}\n"
+                # 创建备份
+                cp "$RC_FILE" "${RC_FILE}.bak"
+
+                # 使用 sed 删除别名行和注释行
+                if [[ "$(uname -s)" == "Darwin" ]]; then
+                    sed -i '' '/Claude Code Notifier - Codex Wrapper/d' "$RC_FILE"
+                    sed -i '' '/alias codex=/d' "$RC_FILE"
+                else
+                    sed -i '/Claude Code Notifier - Codex Wrapper/d' "$RC_FILE"
+                    sed -i '/alias codex=/d' "$RC_FILE"
+                fi
+                printf "${GREEN}✓ 已移除 alias 配置 (备份已保存至 ${RC_FILE}.bak)${NC}\n"
+            fi
+        fi
+    done
+
+    # 提示用户重载 shell
+    printf "${YELLOW}提示: 请运行 'source ~/.zshrc' (或对应的配置文件) 或重启终端以使更改生效。${NC}\n"
+
+    # 2. 删除新版 .codex 目录
+    if [ -d "$HOME/.codex" ]; then
+        rm -rf "$HOME/.codex"
+        printf "${GREEN}✓ 已移除 ~/.codex 目录及其内容${NC}\n"
+    fi
+
+    # 3. 清理旧版残留 (兼容性)
+    if [ -f "$HOME/.claude/scripts/codex-notify" ]; then
+        rm "$HOME/.claude/scripts/codex-notify"
+        printf "${GREEN}✓ 已移除旧版启动脚本: ~/.claude/scripts/codex-notify${NC}\n"
+    fi
+
+    if [ -f "$HOME/.claude/scripts/codex_wrapper.py" ]; then
+        rm "$HOME/.claude/scripts/codex_wrapper.py"
+        printf "${GREEN}✓ 已移除旧版 Wrapper: ~/.claude/scripts/codex_wrapper.py${NC}\n"
+    fi
+
+    printf "${GREEN}✓ Codex 卸载完成${NC}\n"
+fi
+
+printf "${BLUE}=== 卸载操作结束 ===${NC}\n"
