@@ -1,7 +1,7 @@
 # Multi-Platform Code Notifier 🔔
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/ronny1020/claude-code-notifier/releases)
-[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/ronny1020/claude-code-notifier)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/luorenyu/claude-code-notifier/releases)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/luorenyu/claude-code-notifier)
 
 **不错过任何一次确认，不浪费每一秒等待。**
 
@@ -58,7 +58,7 @@ Claude Code 事件 → settings.json hooks → notify.sh → 系统通知
 下载本项目并运行安装脚本：
 
 ```bash
-git clone https://github.com/ronny1020/claude-code-notifier.git
+git clone https://github.com/luorenyu/claude-code-notifier.git
 cd claude-code-notifier
 chmod +x install.sh
 ./install.sh
