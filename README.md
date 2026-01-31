@@ -1,11 +1,11 @@
 # Multi-Platform Code Notifier 🔔
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/luorenyu/claude-code-notifier/releases)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/luorenyu/claude-code-notifier/releases)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/luorenyu/claude-code-notifier)
 
 **不错过任何一次确认，不浪费每一秒等待。**
 
-为 **Claude Code** (Anthropic CLI) 和 **OpenAI Codex** CLI 添加原生系统通知、声音提示和自动终端激活功能。
+为 **Claude Code** (Anthropic CLI)、**Google Gemini CLI** 和 **OpenAI Codex** CLI 添加原生系统通知、声音提示和自动终端激活功能。
 
 ![Demo](assets/demo.png)
 
@@ -14,6 +14,7 @@
 | 平台 | 状态 | 集成方式 | 可靠性 | 延迟 |
 |------|------|----------|--------|------|
 | **Claude Code** | ✅ 完全支持 | 官方 Hooks 系统 | 100% | 近零延迟 |
+| **Google Gemini** | ✅ 完全支持 | 官方 Hooks 系统 | 100% | 近零延迟 |
 | **OpenAI Codex** | ⚠️ 实验性支持 | 进程封装 (Wrapper) | 90% | 实时 (ms) |
 
 ### 架构对比
@@ -24,7 +25,14 @@ Claude Code 事件 → settings.json hooks → notify.sh → 系统通知
 ```
 - 事件驱动，零延迟
 - 官方支持的扩展机制
-- 100% 可靠的事件传递
+
+**Google Gemini (推荐)**:
+```
+Gemini CLI 事件 → settings.json hooks → gemini_bridge.sh → notify.sh → 系统通知
+```
+- 事件驱动，零延迟
+- 通过 Bridge 脚本适配，共享核心通知逻辑
+- 自动修改配置文件注入 Hooks
 
 **OpenAI Codex (实验性)**:
 ```
@@ -70,15 +78,13 @@ chmod +x install.sh
 
 ```
 选择要安装通知功能的平台:
-1) 仅 Claude Code
-2) 仅 OpenAI Codex
-3) 两个平台都安装
-4) 取消安装
+1) Claude Code
+2) OpenAI Codex
+3) Google Gemini CLI
 ```
 
 **推荐选项**:
-- **选项 1**: 如果你只使用 Claude Code（推荐，100% 可靠）
-- **选项 3**: 如果你同时使用 Claude Code 和 Codex
+- 按需选择你正在使用的 AI 助手工具，支持多选。
 
 ### 安装过程
 
@@ -90,6 +96,11 @@ chmod +x install.sh
 3. 创建 `/notifier` Slash Command
 4. **macOS**: 尝试安装 `terminal-notifier`
 5. **Linux**: 检查 `libnotify` 依赖
+
+**对于 Google Gemini**:
+1. 安装脚本到 `~/.gemini/scripts/`
+2. 自动修改 `~/.gemini/settings.json` 注入 Hooks (`Notification` 和 `AfterAgent`)
+3. 如果自动配置失败，会提供手动注册命令
 
 **对于 OpenAI Codex**:
 1. 安装 Python Wrapper 到 `~/.codex/scripts/`
@@ -121,6 +132,15 @@ chmod +x install.sh
 *   `/notifier status` - 查看当前通知状态
 *   `/notifier off` - 临时关闭通知（会议/演示时）
 *   `/notifier on` - 重新开启通知
+
+### Google Gemini CLI
+
+安装完成后通常也无需额外操作，脚本会自动配置 `settings.json`。
+
+*   **权限请求**：当 Gemini 提示需要权限或系统通知时触发。
+*   **任务完成**：当 Agent 任务结束时触发。
+
+如果通知未生效，请检查 `~/.gemini/settings.json` 中的 `hooks` 配置。
 
 ### OpenAI Codex
 
@@ -171,13 +191,18 @@ echo "• task complete"
 ## ⚙️ 配置与自定义
 
 ### 修改配置
-安装后，配置文件位于 `~/.claude/notifier.conf`。你可以修改它来：
+安装后，配置文件位于：
+- Claude: `~/.claude/notifier.conf`
+- Gemini: `~/.gemini/notifier.conf`
+- Codex: `~/.codex/notifier.conf`
+
+你可以修改它来：
 *   更换提示音效文件路径。
 *   开启/关闭自动激活终端功能。
 *   自定义通知标题文字。
 
 ### 自定义图标
-只需将你的图片命名为 `logo.png` 并放入 `~/.claude/assets/` 目录即可生效。
+只需将你的图片命名为 `logo.png` 并放入对应平台的 `assets/` 目录即可生效。
 *(安装包内 `assets/` 目录下的 `logo.png` 会在安装时自动复制过去)*
 
 > **注意 (macOS)**：macOS 高版本系统（如 macOS 12+）由于系统限制，通知可能无法显示自定义 Logo，而是显示终端应用的图标。这是 macOS 系统层面的行为，无法绕过。
@@ -192,6 +217,7 @@ echo "• task complete"
 
 卸载脚本会：
 - **Claude Code**: 移除 `settings.json` 中的 hooks，删除脚本文件
+- **Google Gemini**: 移除 `settings.json` 中的 hooks，删除 `~/.gemini/` 目录
 - **Codex**: 删除 `~/.codex/` 目录，移除 Shell 配置文件中的 alias
 - 询问是否保留配置文件和资源
 
@@ -240,6 +266,23 @@ source ~/.zshrc  # 或 ~/.bashrc
    ```bash
    CLAUDE_TOOL_NAME="PermissionRequest" ~/.codex/scripts/notify.sh
    # 应该立即弹出通知
+   ```
+
+### Gemini 通知不工作
+
+1. **检查 Hook 配置**:
+   查看 `~/.gemini/settings.json`，确认 `hooks` 部分包含 `Notification` 和 `AfterAgent` 的配置，并且指向正确的 `gemini_bridge.sh` 路径。
+
+2. **检查 Bridge 脚本权限**:
+   ```bash
+   ls -la ~/.gemini/scripts/gemini_bridge.sh
+   # 确保有执行权限 (x)
+   ```
+
+3. **手动测试 Bridge**:
+   ```bash
+   ~/.gemini/scripts/gemini_bridge.sh PermissionRequest
+   # 应该触发通知
    ```
 
 ### Claude Code 通知正常，Codex 不正常

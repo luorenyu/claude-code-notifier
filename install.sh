@@ -81,13 +81,14 @@ function show_menu() {
     # Set global variables
     if [[ -n "${selected[0]}" ]]; then INSTALL_CLAUDE=true; else INSTALL_CLAUDE=false; fi
     if [[ -n "${selected[1]}" ]]; then INSTALL_CODEX=true; else INSTALL_CODEX=false; fi
+    if [[ -n "${selected[2]}" ]]; then INSTALL_GEMINI=true; else INSTALL_GEMINI=false; fi
 }
 
 # 执行菜单
-OPTIONS_LIST=("Claude Code" "OpenAI Codex")
+OPTIONS_LIST=("Claude Code" "OpenAI Codex" "Google Gemini CLI")
 show_menu "请选择要安装的组件:" "${OPTIONS_LIST[@]}"
 
-if [[ "$INSTALL_CLAUDE" == "false" && "$INSTALL_CODEX" == "false" ]]; then
+if [[ "$INSTALL_CLAUDE" == "false" && "$INSTALL_CODEX" == "false" && "$INSTALL_GEMINI" == "false" ]]; then
     echo "未选择任何组件，退出安装。"
     exit 0
 fi
@@ -96,12 +97,14 @@ echo ""
 printf "准备安装: \n"
 if [[ "$INSTALL_CLAUDE" == "true" ]]; then printf "  ${GREEN}✓ Claude Code${NC}\n"; fi
 if [[ "$INSTALL_CODEX" == "true" ]]; then printf "  ${GREEN}✓ OpenAI Codex${NC}\n"; fi
+if [[ "$INSTALL_GEMINI" == "true" ]]; then printf "  ${GREEN}✓ Google Gemini CLI${NC}\n"; fi
 echo ""
 
 # 源文件路径定义
 BASE_DIR="$(dirname "$0")"
 SCRIPT_SOURCE="$BASE_DIR/scripts/notify.sh"
 WRAPPER_SOURCE="$BASE_DIR/scripts/codex_wrapper.py"
+BRIDGE_SOURCE="$BASE_DIR/scripts/gemini_bridge.sh"
 TOGGLE_SOURCE="$BASE_DIR/scripts/toggle.sh"
 CONF_SOURCE="$BASE_DIR/scripts/notifier.conf"
 LOGO_SOURCE="$BASE_DIR/assets/logo.png"
@@ -113,6 +116,7 @@ if [ ! -f "$SCRIPT_SOURCE" ]; then
         BASE_DIR="."
         SCRIPT_SOURCE="./scripts/notify.sh"
         WRAPPER_SOURCE="./scripts/codex_wrapper.py"
+        BRIDGE_SOURCE="./scripts/gemini_bridge.sh"
         TOGGLE_SOURCE="./scripts/toggle.sh"
         CONF_SOURCE="./scripts/notifier.conf"
         LOGO_SOURCE="./assets/logo.png"
@@ -125,6 +129,159 @@ fi
 # ========================================
 # 函数定义
 # ========================================
+
+install_gemini_notifications() {
+    printf "${BLUE}=== 正在为 Google Gemini CLI 安装通知功能 ===${NC}\n"
+
+    GEMINI_ROOT="$HOME/.gemini"
+    GEMINI_SCRIPTS="$GEMINI_ROOT/scripts"
+    GEMINI_ASSETS="$GEMINI_ROOT/assets"
+
+    mkdir -p "$GEMINI_SCRIPTS"
+    mkdir -p "$GEMINI_ASSETS"
+    printf "${GREEN}✓ 创建 Gemini 安装目录: $GEMINI_ROOT${NC}\n"
+
+    # 1. 安装并配置 Bridge Script
+    BRIDGE_DEST="$GEMINI_SCRIPTS/gemini_bridge.sh"
+
+    if [ ! -f "$BRIDGE_SOURCE" ]; then
+         echo "错误: 找不到 scripts/gemini_bridge.sh"
+         exit 1
+    fi
+
+    cp "$BRIDGE_SOURCE" "$BRIDGE_DEST"
+    chmod +x "$BRIDGE_DEST"
+    printf "${GREEN}✓ Bridge 脚本已安装: $BRIDGE_DEST${NC}\n"
+
+    # 2. 安装并配置 notify.sh (独立副本)
+    NOTIFY_DEST="$GEMINI_SCRIPTS/notify.sh"
+    cp "$SCRIPT_SOURCE" "$NOTIFY_DEST"
+    chmod +x "$NOTIFY_DEST"
+
+    # 修改 notify.sh 中的路径指向 .gemini
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        sed -i '' "s|\.claude/assets|\.gemini/assets|g" "$NOTIFY_DEST"
+        sed -i '' "s|\.claude/notifier.conf|\.gemini/notifier.conf|g" "$NOTIFY_DEST"
+    else
+        sed -i "s|\.claude/assets|\.gemini/assets|g" "$NOTIFY_DEST"
+        sed -i "s|\.claude/notifier.conf|\.gemini/notifier.conf|g" "$NOTIFY_DEST"
+    fi
+    printf "${GREEN}✓ 通知脚本已安装到 Gemini 目录: $NOTIFY_DEST${NC}\n"
+
+    # 3. 安装配置文件 (独立副本)
+    CONF_DEST="$GEMINI_ROOT/notifier.conf"
+    if [ ! -f "$CONF_DEST" ]; then
+        if [ -f "$CONF_SOURCE" ]; then
+            cp "$CONF_SOURCE" "$CONF_DEST"
+            # 修改配置中的图标路径和标题
+            if [[ "$(uname -s)" == "Darwin" ]]; then
+                sed -i '' "s|\.claude/assets|\.gemini/assets|g" "$CONF_DEST"
+                sed -i '' 's|TITLE_PERMISSION="⚠️ Claude Code 等待确认"|TITLE_PERMISSION="⚠️ Gemini CLI 等待确认"|g' "$CONF_DEST"
+                sed -i '' 's|TITLE_STOP="✅ Claude Code 任务完成"|TITLE_STOP="✅ Gemini CLI 任务完成"|g' "$CONF_DEST"
+            else
+                sed -i "s|\.claude/assets|\.gemini/assets|g" "$CONF_DEST"
+                sed -i 's|TITLE_PERMISSION="⚠️ Claude Code 等待确认"|TITLE_PERMISSION="⚠️ Gemini CLI 等待确认"|g' "$CONF_DEST"
+                sed -i 's|TITLE_STOP="✅ Claude Code 任务完成"|TITLE_STOP="✅ Gemini CLI 任务完成"|g' "$CONF_DEST"
+            fi
+            printf "${GREEN}✓ Gemini 配置文件已安装: $CONF_DEST${NC}\n"
+        fi
+    else
+        printf "${YELLOW}提示: Gemini 配置文件已存在，跳过覆盖。${NC}\n"
+    fi
+
+    # 4. 安装资源
+    if [ -f "$LOGO_SOURCE" ]; then
+        cp "$LOGO_SOURCE" "$GEMINI_ASSETS/logo.png"
+    fi
+
+    # 5. 自动修改配置文件 (settings.json)
+    echo ""
+    printf "${YELLOW}=== 配置 Gemini CLI Hooks (直接修改 settings.json) ===${NC}\n"
+
+    GEMINI_SETTINGS="$HOME/.gemini/settings.json"
+
+    # 确保 settings.json 存在
+    if [ ! -f "$GEMINI_SETTINGS" ]; then
+        echo "{}" > "$GEMINI_SETTINGS"
+    fi
+
+    printf "${BLUE}正在配置 ~/.gemini/settings.json ...${NC}\n"
+
+    python3 -c "
+import json
+import os
+import sys
+
+settings_path = os.path.expanduser('~/.gemini/settings.json')
+bridge_path = os.path.expanduser('~/.gemini/scripts/gemini_bridge.sh')
+
+if not os.path.exists(settings_path):
+    print(f'创建新的配置文件: {settings_path}')
+    data = {}
+else:
+    try:
+        with open(settings_path, 'r') as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        print('错误: settings.json 格式无效')
+        data = {}
+
+if 'hooks' not in data:
+    data['hooks'] = {}
+
+# 定义 Gemini 的 Hooks
+# Notification: 系统通知 (如权限请求) -> 映射为 PermissionRequest
+# AfterAgent: Agent 任务结束 -> 映射为 Stop
+target_hooks = {
+    'Notification': {
+        'command': f'{bridge_path} PermissionRequest',
+        'type': 'command'
+    },
+    'AfterAgent': {
+        'command': f'{bridge_path} Stop',
+        'type': 'command'
+    }
+}
+
+updated = False
+for event, hook_config in target_hooks.items():
+    if event not in data['hooks']:
+        data['hooks'][event] = []
+
+    exists = False
+    # 检查是否已经存在相同的 command
+    for matcher_group in data['hooks'][event]:
+        if matcher_group.get('matcher') == '*':
+            for h in matcher_group.get('hooks', []):
+                if bridge_path in h.get('command', ''):
+                    exists = True
+                    break
+        if exists: break
+
+    if not exists:
+        new_entry = {
+            'matcher': '*',
+            'hooks': [hook_config]
+        }
+        data['hooks'][event].append(new_entry)
+        print(f'  - 已添加 {event} hook')
+        updated = True
+    else:
+        print(f'  - {event} hook 已存在，跳过')
+
+if updated:
+    with open(settings_path, 'w') as f:
+        json.dump(data, f, indent=2)
+    print('配置文件更新成功。')
+else:
+    print('配置文件无需更新。')
+"
+
+    printf "${GREEN}✓ Gemini 配置文件更新完成${NC}\n"
+
+    # 移除旧的手动命令提示，因为现在是自动写入
+    echo "现在 Gemini CLI 应该可以自动触发通知了。"
+}
 
 install_codex_notifications() {
     printf "${BLUE}=== 正在为 OpenAI Codex 安装通知功能 (Wrapper模式) ===${NC}\n"
@@ -449,6 +606,14 @@ if [[ "$INSTALL_CODEX" == "true" ]]; then
     install_codex_notifications
 fi
 
+# ========================================
+# Gemini 安装
+# ========================================
+
+if [[ "$INSTALL_GEMINI" == "true" ]]; then
+    install_gemini_notifications
+fi
+
 # 最终消息
 printf "${BLUE}=== 安装成功 ===${NC}\n"
 if [[ "$INSTALL_CLAUDE" == "true" ]]; then
@@ -456,4 +621,7 @@ if [[ "$INSTALL_CLAUDE" == "true" ]]; then
 fi
 if [[ "$INSTALL_CODEX" == "true" ]]; then
     echo -e "OpenAI Codex: 安装于 ~/.codex/scripts (独立运行)"
+fi
+if [[ "$INSTALL_GEMINI" == "true" ]]; then
+    echo -e "Google Gemini: 安装于 ~/.gemini/scripts"
 fi
